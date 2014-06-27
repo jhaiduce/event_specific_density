@@ -104,11 +104,19 @@ class emfisis_fit_model(object):
     def __init__(self,scname):
         self.fitcoeffs=None
         self.scname=scname
+        self.binwidths=0.5
+        self.uncertbins=np.arange(1.5,6,self.binwidths)
 
     def _calculate_fitcoeffs(self,dates):
         dates=np.array(dates)
         dates=dates[np.argsort(dates)]
-        times,Lstar,MLT,MLAT,InvLat,density=get_density_and_time(self.scname,dates[0],dates[-1]+timedelta(1))
+        try:
+            dtend=dates[-1]+timedelta(1)
+            dtstart=dates[0]
+        except TypeError:
+            dtend=num2date(dates[-1]+1)
+            dtstart=num2date(dates[0])
+        times,Lstar,MLT,MLAT,InvLat,density=get_density_and_time(self.scname,dtstart,dtend)
 
         # Find the points that are valid in all arrays
         validpoints=np.where(-(density.mask+times.mask))
@@ -135,6 +143,9 @@ class emfisis_fit_model(object):
 
         fitcoeffs=np.zeros((len(segmentbounds)-1,6))
 
+        fituncert=np.zeros((len(segmentbounds)-1,len(self.uncertbins)+2))
+        fituncert.fill(None)
+
         for i in range(len(segmentbounds)-1):
             Lseg=Lstar[segmentbounds[i]:segmentbounds[i+1]]
             dseg=density[segmentbounds[i]:segmentbounds[i+1]]
@@ -148,48 +159,84 @@ class emfisis_fit_model(object):
             #print fitresult[2]['nfev']
             pL,pW,ps,ts=fitresult[0]
             fitcoeffs[i,:]=(date2num(tseg[0]),date2num(tseg[-1]),pL,pW,ps,ts)
+            fituncert[i,0:2]=date2num(tseg[0]),date2num(tseg[-1])
 
-        return fitcoeffs
+            fitvalues=fitdensity(Lseg,MLTseg,MLATseg,InvLatseg,pL,pW,ps,ts)
+            for j in range(len(self.uncertbins)-1):
+                binInds=np.where((self.uncertbins[j]<Lseg) * (Lseg<self.uncertbins[j+1]))
+                fituncert[i,j+2]=np.sqrt(((fitvalues[binInds]-dseg[binInds])**2).sum()/len(binInds[0]))
+        return fitcoeffs,fituncert
 
-    def __call__(self,datetimes,L,MLT,MLAT,InvLat):
+    def __call__(self,datetimes,L,MLT,MLAT,InvLat,minDensity=1e-1,returnUncert=False):
         try:
             _ = (d for d in datetimes)
         except TypeError:
             datetimes=[datetimes]
 
-        fitcoeffs=self.get_fitcoeffs(datetimes)
-        if fitcoeffs is None: return None
-
-        print fitcoeffs.shape
+        fitcoeffs,fituncert=self.get_fitcoeffs(datetimes,returnUncert=True)
 
         pL,pW,ps,ts=fitcoeffs[:,2:].transpose()
-            
-        return fitdensity(L,MLT,MLAT,InvLat,pL,pW,ps,ts)
+
+        fitvalues=np.maximum(fitdensity(L.flatten(),MLT,MLAT,InvLat,pL,pW,ps,ts),minDensity)
+
+        if returnUncert:
+            uncertinds=np.searchsorted(self.uncertbins,L.flatten())
+            uncert=[fituncert[i,uncertinds[i]] for i in range(len(uncertinds))]
+            return fitvalues,uncert
+        else:
+            return fitvalues
 
     def search_fitcoeffs(self,odate):
-        i=np.searchsorted(self.fitcoeffs[:,0],odate)
-        fitcoeffs=np.zeros((len(odate),6))
-        fitcoeffs[(i>0),:] = self.fitcoeffs[i[(i>0)]-1,:]
-        fitcoeffs[i==1,2:] = None
-        fitcoeffs[(self.fitcoeffs[i-1,0]>=odate) + (odate>=self.fitcoeffs[i-1,1]),2:]=None
-        return fitcoeffs
+        return self.searcharray(odate,self.fitcoeffs)
 
-    def get_fitcoeffs(self,dates):
-        odate=date2num(dates)
+    def searcharray(self,odate,arr):
+
+        # Find dates in array
+        i=np.searchsorted(arr[:,0],odate)
+
+        # Build array of values matching dates
+        searchvalues=np.ones((len(odate),arr.shape[1]))
+        searchvalues[(i>0),:] = arr[i[(i>0)]-1,:]
+        searchvalues[i==1,2:] = arr[0,2:]
+
+        # Fill in gaps by linear interpolation
+        gaps=(arr[np.minimum(i,arr.shape[0]-1),0]>=odate) + (odate>=arr[i-1,1])
+        igap=i[gaps]
+        interpfac=(odate[gaps]-arr[igap-1,1])/(arr[np.minimum(igap,arr.shape[0]-1),0]-arr[igap-1,1])
+        searchvalues[igap,2:]=arr[igap-1,2:]+(arr[np.minimum(igap,arr.shape[0]-1),2:]-arr[igap-1,2:])
+
+        return searchvalues
+
+    def get_fitcoeffs(self,dates,returnUncert=False):
+        dates=dates.flatten()
+
+        try:
+            odate=date2num(dates)
+        except AttributeError:
+            odate=dates
 
         if self.fitcoeffs is None:
-            self.fitcoeffs=self._calculate_fitcoeffs(dates)
-
-        print odate, self.fitcoeffs.shape
+            self.fitcoeffs,self.fituncert=self._calculate_fitcoeffs(dates)
 
         fitcoeffs=self.search_fitcoeffs(odate)
-        if not np.isnan(fitcoeffs).any(): return fitcoeffs
+        if not np.isnan(fitcoeffs).any(): 
+            if returnUncert:
+                return fitcoeffs,self.searcharray(odate,self.fituncert)
+            else:
+                return fitcoeffs
 
-        fitcoeffs=self._calculate_fitcoeffs(dates[np.where(np.isnan(fitcoeffs[:,2]))])
+        fitcoeffs,fituncert=self._calculate_fitcoeffs(dates[np.where(np.isnan(fitcoeffs[:,2]))])
         try:
             inds=np.searchsorted(self.fitcoeffs[:,0],fitcoeffs[:,0])
             self.fitcoeffs=np.insert(self.fitcoeffs,inds,fitcoeffs,axis=0)
+            self.fituncert=np.insert(self.fituncert,inds,fituncert,axis=0)
+            values,inds=np.unique(self.fitcoeffs[:,0],return_index=True)
+            self.fitcoeffs=self.fitcoeffs[inds,:]
+            self.fituncert=self.fituncert[inds,:]
         except TypeError:
             self.fitcoeffs=fitcoeffs
 
-        return self.search_fitcoeffs(odate)
+        if returnUncert:
+            return self.search_fitcoeffs(odate),self.searcharray(odate,self.fituncert)
+        else:
+            self.search_fitcoeffs(odate)
