@@ -181,7 +181,7 @@ class emfisis_fit_model(object):
 
         if returnUncert:
             uncertinds=np.searchsorted(self.uncertbins,L.flatten())
-            uncert=[fituncert[i,uncertinds[i]] for i in range(len(uncertinds))]
+            uncert=[fituncert[i,uncertinds[i]+1] for i in range(len(uncertinds))]
             return fitvalues,uncert
         else:
             return fitvalues
