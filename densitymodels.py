@@ -164,7 +164,7 @@ class emfisis_fit_model(object):
             fitvalues=fitdensity(Lseg,MLTseg,MLATseg,InvLatseg,pL,pW,ps,ts)
             for j in range(len(self.uncertbins)-1):
                 binInds=np.where((self.uncertbins[j]<Lseg) * (Lseg<self.uncertbins[j+1]))
-                fituncert[i,j+2]=np.sqrt(((fitvalues[binInds]-dseg[binInds])**2).sum()/len(binInds[0]))
+                fituncert[i,j+2]=np.sqrt(((np.log(fitvalues[binInds])-np.log(dseg[binInds]))**2).sum()/len(binInds[0]))
         return fitcoeffs,fituncert
 
     def __call__(self,datetimes,L,MLT,MLAT,InvLat,minDensity=1e-1,returnUncert=False):
