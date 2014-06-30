@@ -12,7 +12,7 @@ import matplotlib
 
 #matplotlib.rc('text',usetex=True)
 
-times,L,MLT,MLAT,InvLat,density=get_density_and_time('rbspa',datetime(2012,10,6),datetime(2012,10,9))
+times,L,MLT,MLAT,InvLat,density=get_density_and_time('rbspa',datetime(2012,10,6),datetime(2012,10,10))
 
 emfisis_fit=emfisis_fit_model('rbspa')
 
