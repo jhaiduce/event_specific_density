@@ -105,7 +105,7 @@ class emfisis_fit_model(object):
         self.fitcoeffs=None
         self.scname=scname
         self.binwidths=0.5
-        self.uncertbins=np.arange(1.5,6,self.binwidths)
+        self.uncertbins=np.arange(1.5,6.5,self.binwidths)
 
     def _calculate_fitcoeffs(self,dates):
         dates=np.array(dates)
