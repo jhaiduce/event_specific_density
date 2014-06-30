@@ -93,4 +93,11 @@ fig5.gca().plot(times,fitdensity*np.exp(fituncert),linestyle=':',color='g')
 fig5.gca().plot(times,fitdensity/np.exp(fituncert),linestyle=':',color='g')
 fig5.gca().set_yscale('log')
 
+fig6=plt.figure()
+fig6.gca().plot(L,density,linestyle='',marker='.')
+fig6.gca().plot(L,fitdensity,color='g')
+fig6.gca().plot(L,fitdensity*np.exp(fituncert),linestyle=':',color='g')
+fig6.gca().plot(L,fitdensity/np.exp(fituncert),linestyle=':',color='g')
+fig6.gca().set_yscale('log')
+
 plt.show()
