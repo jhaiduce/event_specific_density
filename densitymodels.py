@@ -399,7 +399,7 @@ class emfisis_fit_model(object):
         try:
             _ = (d for d in datetimes)
         except TypeError:
-            datetimes=[datetimes]
+            datetimes=np.array([datetimes])
 
         fitcoeffs,fituncert,inds=self.get_fitcoeffs(datetimes,returnFull=True)
 
