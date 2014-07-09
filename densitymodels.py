@@ -405,7 +405,14 @@ class emfisis_fit_model(object):
 
         pL,pW,ps,ts=fitcoeffs[:,2:].transpose()
 
-        fitvalues=np.maximum(fitdensity(L.flatten(),MLT,MLAT,InvLat,pL,pW,ps,ts),minDensity)
+        # Flatten arrays (if possible)
+        try:
+            L=L.flatten()
+            MLT=MLT.flatten()
+        except:
+            pass
+
+        fitvalues=np.maximum(fitdensity(L,MLT,MLAT,InvLat,pL,pW,ps,ts),minDensity)
 
         if returnFull:
             uncertinds=np.searchsorted(self.uncertbins,L.flatten())
