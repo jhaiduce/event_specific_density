@@ -373,7 +373,7 @@ class emfisis_fit_model(object):
                 fituncert[i,j+2]=np.exp(np.sqrt(((np.log(fitvalues[binInds])-np.log(dseg[binInds]))**2).sum()/len(binInds[0])))
         return fitcoeffs,fituncert
 
-    def __call__(self,datetimes,L,MLT,MLAT,InvLat,minDensity=1e-1,returnUncert=False):
+    def __call__(self,datetimes,L,MLT,MLAT,InvLat,minDensity=1e-1,returnFull=False):
         """
         Get the density (and optionally uncertainty) at the requested point(s).
 
@@ -401,23 +401,23 @@ class emfisis_fit_model(object):
         except TypeError:
             datetimes=[datetimes]
 
-        fitcoeffs,fituncert=self.get_fitcoeffs(datetimes,returnUncert=True)
+        fitcoeffs,fituncert,inds=self.get_fitcoeffs(datetimes,returnFull=True)
 
         pL,pW,ps,ts=fitcoeffs[:,2:].transpose()
 
         fitvalues=np.maximum(fitdensity(L.flatten(),MLT,MLAT,InvLat,pL,pW,ps,ts),minDensity)
 
-        if returnUncert:
+        if returnFull:
             uncertinds=np.searchsorted(self.uncertbins,L.flatten())
             uncert=[fituncert[i,uncertinds[i]+1] for i in range(len(uncertinds))]
-            return fitvalues,uncert
+            return fitvalues,uncert,inds
         else:
             return fitvalues
 
-    def search_fitcoeffs(self,odate):
-        return self.searcharray(odate,self.fitcoeffs)
+    def search_fitcoeffs(self,odate,returnInds=False):
+        return self.searcharray(odate,self.fitcoeffs,returnInds)
 
-    def searcharray(self,odate,arr):
+    def searcharray(self,odate,arr,return_inds=False):
 
         # Find dates in array
         i=np.searchsorted(arr[:,0],odate)
@@ -433,9 +433,12 @@ class emfisis_fit_model(object):
         interpfac=(odate[gaps]-arr[igap-1,1])/(arr[np.minimum(igap,arr.shape[0]-1),0]-arr[igap-1,1])
         searchvalues[igap,2:]=arr[igap-1,2:]+(arr[np.minimum(igap,arr.shape[0]-1),2:]-arr[igap-1,2:])
 
-        return searchvalues
+        if return_inds:
+            return searchvalues,i
+        else:
+            return searchvalues
 
-    def get_fitcoeffs(self,dates,returnUncert=False):
+    def get_fitcoeffs(self,dates,returnFull=False):
         dates=dates.flatten()
 
         try:
@@ -446,10 +449,11 @@ class emfisis_fit_model(object):
         if self.fitcoeffs is None:
             self.fitcoeffs,self.fituncert=self._calculate_fitcoeffs(dates)
 
-        fitcoeffs=self.search_fitcoeffs(odate)
+        fitcoeffs,inds=self.search_fitcoeffs(odate,returnInds=True)
         if not np.isnan(fitcoeffs).any(): 
-            if returnUncert:
-                return fitcoeffs,self.searcharray(odate,self.fituncert)
+            if returnFull:
+                uncert=self.searcharray(odate,self.fituncert)
+                return fitcoeffs,uncert,inds
             else:
                 return fitcoeffs
 
@@ -464,7 +468,9 @@ class emfisis_fit_model(object):
         except TypeError:
             self.fitcoeffs=fitcoeffs
 
-        if returnUncert:
-            return self.search_fitcoeffs(odate),self.searcharray(odate,self.fituncert)
+        if returnFull:
+            fitcoeffs,inds=self.search_fitcoeffs(odate,returnInds=True)
+            uncert=self.searcharray(odate,self.fituncert)
+            return fitcoeffs,uncert,inds
         else:
-            self.search_fitcoeffs(odate)
+            return self.search_fitcoeffs(odate)
