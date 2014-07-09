@@ -363,7 +363,6 @@ class emfisis_fit_model(object):
 
             fitresult = leastsq(fitfunc,[3.6,0.8,1,1],args=(Lseg,MLTseg,MLATseg,InvLatseg,dseg),
                                 maxfev=10000,full_output=True,ftol=1e-4,xtol=1e-4)
-            #print fitresult[2]['nfev']
             pL,pW,ps,ts=fitresult[0]
             fitcoeffs[i,:]=(date2num(tseg[0]),date2num(tseg[-1]),pL,pW,ps,ts)
             fituncert[i,0:2]=date2num(tseg[0]),date2num(tseg[-1])
