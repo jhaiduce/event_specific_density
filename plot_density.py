@@ -9,8 +9,32 @@ from scipy.optimize import leastsq
 import matplotlib
 from densitymodels import *
 import matplotlib
+import matplotlib.dates as mdates
+dayFmt = mdates.DateFormatter('%d %b %Y      ')
+hourFmt = mdates.DateFormatter('%H:%M')
 
 #matplotlib.rc('text',usetex=True)
+
+def format_xdate(fig):
+    
+    locator=matplotlib.ticker.AutoLocator()
+    fig.gca().xaxis.set_major_locator(locator)
+    #formatter=mdates.AutoDateFormatter(locator)
+
+    locator=matplotlib.ticker.AutoMinorLocator()
+    fig.gca().xaxis.set_minor_locator(locator)
+    #formatter=mdates.AutoDateFormatter(locator)
+    fig.gca().xaxis.set_major_formatter(dayFmt)
+    fig.gca().xaxis.set_minor_formatter(hourFmt)
+
+    plt.setp(fig.gca().xaxis.get_majorticklabels(),rotation=30)
+    plt.setp(fig.gca().xaxis.get_majorticklabels(),ha='right')
+    plt.setp(fig.gca().xaxis.get_minorticklabels(),rotation=30)
+    plt.setp(fig.gca().xaxis.get_minorticklabels(),ha='right')
+    #plt.setp(fig.gca().xaxis.get_minorticklabels(),bottom=0.2)
+
+    fig.autofmt_xdate()
+
 
 times,L,MLT,MLAT,InvLat,density=get_density_and_time('rbspa',datetime(2012,10,6),datetime(2012,10,10))
 
@@ -46,6 +70,8 @@ fig1.gca().set_yscale('log')
 fig1.gca().set_ylim(1e0,1e4)
 fig1.gca().set_ylabel(r'Electron density (cm^-3)')
 fig1.gca().set_xlabel('Universal time')
+format_xdate(fig1)
+
 
 #fig3=plt.figure()
 
