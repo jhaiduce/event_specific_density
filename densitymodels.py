@@ -431,14 +431,9 @@ class emfisis_fit_model(object):
 
         # Build array of values matching dates
         searchvalues=np.ones((len(odate),arr.shape[1]))
+        searchvalues.fill(None)
         searchvalues[(i>0),:] = arr[i[(i>0)]-1,:]
         searchvalues[i==1,2:] = arr[0,2:]
-
-        # Fill in gaps by linear interpolation
-        gaps=(arr[np.minimum(i,arr.shape[0]-1),0]>=odate) + (odate>=arr[i-1,1])
-        igap=i[gaps]
-        interpfac=(odate[gaps]-arr[igap-1,1])/(arr[np.minimum(igap,arr.shape[0]-1),0]-arr[igap-1,1])
-        searchvalues[igap,2:]=arr[igap-1,2:]+(arr[np.minimum(igap,arr.shape[0]-1),2:]-arr[igap-1,2:])
 
         if return_inds:
             return searchvalues,i
