@@ -401,6 +401,12 @@ class emfisis_fit_model(object):
         except TypeError:
             datetimes=np.array([datetimes])
 
+        if len(datetimes)==0:
+            if returnFull:
+                return [],[],[]
+            else:
+                return []
+
         fitcoeffs,fituncert,inds=self.get_fitcoeffs(datetimes,returnFull=True)
 
         pL,pW,ps,ts=fitcoeffs[:,2:].transpose()
