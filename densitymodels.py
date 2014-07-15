@@ -7,6 +7,7 @@ import numpy as np
 from smooth import smooth
 from scipy.optimize import leastsq
 import matplotlib
+from scipy.interpolate import Rbf, UnivariateSpline, interp1d
 
 #matplotlib.rc('text',usetex=True)
 
@@ -292,7 +293,179 @@ def get_density_and_time(scname,dstart,dend):
 def local_maxima(a):
     return np.r_[True, a[1:] < a[:-1]] & np.r_[a[:-1] < a[1:], True]
 
-class emfisis_fit_model(object):
+class emfisis_density_model(object):
+
+    def _getdata(self,scname,dates):
+
+        dates=np.array(dates)
+        dates=dates[np.argsort(dates)]
+        try:
+            dtend=dates[-1]+timedelta(1)
+            dtstart=dates[0]
+        except TypeError:
+            dtend=num2date(dates[-1]+1)
+            dtstart=num2date(dates[0])
+        times,Lstar,MLT,MLAT,InvLat,density=get_density_and_time(scname,dtstart,dtend)
+
+        # Find the points that are valid in all arrays
+        validpoints=np.where(-(density.mask+times.mask))
+
+        # Remove invalid points from all the arrays
+        times=times[validpoints]
+        Lstar=Lstar[validpoints]
+        MLT=MLT[validpoints]
+        MLAT=MLAT[validpoints]
+        InvLat=InvLat[validpoints]
+        density=density[validpoints]
+
+        maxima=np.where(local_maxima(Lstar))[0]
+        minima=np.where(local_maxima(-Lstar))[0]
+
+        segmentbounds=np.insert(maxima,np.searchsorted(maxima,minima),minima)
+        segmentbounds[-1]-=1
+
+        otimes=date2num(times)
+        return times,Lstar,MLT,MLAT,InvLat,density,segmentbounds
+        
+
+class emfisis_smoothing_model(emfisis_density_model):
+
+    """
+    Time-dependent electron density model based on RBSP density measurements. Smooths the densities measured by the EMFISIS instrument and extrapolates them into all local times and latitudes.
+
+    Example::
+
+        times, L, MLT, MLAT, InvLat, density = get_density_and_time('rbspa', datetime(2012,10,6), datetime(2012,10,10))
+        emfisis_fit = emfisis_fit_model('rbspa')
+        fitdensity, fituncert, inds = emfisis_fit(times, L, MLT, MLAT, InvLat, returnFull=True)
+    """
+
+    def __init__(self,scname,**kwargs):
+        """
+        Set-up the density model
+
+        Args:
+            scname (str): RBSP spacecraft to use ('rbspa' or 'rbspb')
+        """
+        self.scname=scname
+        self.binwidths=0.5
+        self.uncertbins=np.arange(1.5,6.5,self.binwidths)
+        self.kwargs=kwargs
+        self.segmentbounds=None
+
+    def _create_interpolators(self,dates):
+        """
+        Load the data from the RBSP spacecraft
+        """
+
+        times,Lstar,MLT,MLAT,InvLat,density,segmentbounds=self._getdata(self.scname,dates)
+
+        interpolators=np.zeros((len(segmentbounds)-1,),dtype=object)
+        segmentlimits=np.zeros((len(segmentbounds)-1,2))
+
+        for i in range(len(segmentbounds)-1):
+            Lseg=Lstar[segmentbounds[i]:segmentbounds[i+1]]
+            dseg=density[segmentbounds[i]:segmentbounds[i+1]]
+            MLTseg=MLT[segmentbounds[i]:segmentbounds[i+1]]
+            MLATseg=MLAT[segmentbounds[i]:segmentbounds[i+1]]
+            InvLatseg=InvLat[segmentbounds[i]:segmentbounds[i+1]]
+            tseg=times[segmentbounds[i]:segmentbounds[i+1]]
+
+            inds=np.argsort(Lseg)
+
+#            if self.epsilon==0:
+#                interpolators[i]=interp1d(Lseg[inds],dseg[inds],bounds_error=False)
+#            else:
+                #interpolators[i]=Rbf(Lseg,dseg,**self.kwargs)
+            interpolators[i]=UnivariateSpline(Lseg[inds],dseg[inds],**self.kwargs)
+                
+            segmentlimits[i,:]=date2num(tseg[0]),date2num(tseg[-1])
+
+        return segmentlimits,interpolators
+
+    def __call__(self,datetimes,L,MLT,MLAT,InvLat,minDensity=1e-1,returnFull=False):
+        """
+        Get the density (and optionally uncertainty) at the requested point(s).
+
+        Args:
+            datetimes (datetime or array of datetimes): Times to calculate density at
+
+            L (float array): Array of L-shell values
+
+            MLT (float array): Array of magnetic local times
+            
+            MLAT (float array): Array of magnetic latitudes
+            
+            InvLat (float array): Array of invariant latitudes
+
+            minDensity (float): Minimum density to return (to prevent returning zero or negative densities
+
+            returnFull (bool): Whether to return the uncertainties along with the densities
+
+        Returns:
+        
+            Densities at the requested points, or a tuple of (densities, uncertainties).
+        """
+        try:
+            _ = (d for d in datetimes)
+        except TypeError:
+            datetimes=np.ma.array([datetimes])
+
+        if len(datetimes)==0:
+            if returnFull:
+                return np.array([]),np.array([]),np.array([])
+            else:
+                return np.array([])
+
+        try:
+            odates=date2num(datetimes)
+        except AttributeError:
+            odates=datetimes
+
+        # Flatten arrays
+        L=np.ma.array(L).flatten()
+        MLT=np.ma.array(MLT).flatten()
+        odates=odates.flatten()
+
+        if self.segmentbounds is None:
+            self.segmentbounds,self.interpolators=self._create_interpolators(odates)
+
+        if odates.max()>self.segmentbounds.max():
+            segmentbounds,interpolators=self._create_interpolators([self.segmentbounds.max(),odates.max()])
+            self.segmentbounds=np.concatenate((self.segmentbounds,segmentbounds))
+            self.interpolators=np.concatenate((self.interpolators,interpolators))
+        if odates.min()<self.segmentbounds.min():
+            segmentbounds,interpolators=self._create_interpolators([odates.min(),self.segmentbounds.min()])
+            self.segmentbounds=np.concatenate((segmentbounds,self.segmentbounds))
+            self.interpolators=np.concatenate((interpolators,self.interpolators))
+
+        # Find dates in array
+        i=np.searchsorted(self.segmentbounds[:,0],odates)
+
+        # Build array of values matching dates
+        densities=np.ma.ones((len(L)))
+        densities.fill(np.ma.masked)
+        segmentbounds=self.segmentbounds
+        in_limits=(i>0)*(i<self.segmentbounds.shape[0])
+        if len(odates)==len(L):
+            if len(i[in_limits])>0:
+                densities[in_limits] = [self.interpolators[k](L[j]) for j,k in enumerate(i[in_limits]-1) ]
+        elif len(odates)==1:
+            if len(i[in_limits])>0:
+                densities = self.interpolators[i[in_limits]-1][0](L)
+        else:
+            raise ValueError('Size mismatch between datetimes array and L.')
+
+        densities=np.ma.masked_invalid(densities)
+
+        densities[densities<minDensity]=minDensity
+
+        if returnFull:
+            return densities,np.zeros(densities.shape),i
+        else:
+            return densities
+
+class emfisis_fit_model(emfisis_density_model):
 
     """
     Time-dependent electron density model based on RBSP density measurements. Fits a modified Sheeley density model (see the fitdensity function) to the nearest (in time) density data from the given RBSP spacecraft.
@@ -317,38 +490,10 @@ class emfisis_fit_model(object):
         self.uncertbins=np.arange(1.5,6.5,self.binwidths)
 
     def _calculate_fitcoeffs(self,dates):
-        dates=np.array(dates)
-        dates=dates[np.argsort(dates)]
-        try:
-            dtend=dates[-1]+timedelta(1)
-            dtstart=dates[0]
-        except TypeError:
-            dtend=num2date(dates[-1]+1)
-            dtstart=num2date(dates[0])
-        times,Lstar,MLT,MLAT,InvLat,density=get_density_and_time(self.scname,dtstart,dtend)
 
-        # Find the points that are valid in all arrays
-        validpoints=np.where(-(density.mask+times.mask))
+        times,Lstar,MLT,MLAT,InvLat,density,segmentbounds=self._getdata(self.scname,dates)
 
-        # Remove invalid points from all the arrays
-        times=times[validpoints]
-        Lstar=Lstar[validpoints]
-        MLT=MLT[validpoints]
-        MLAT=MLAT[validpoints]
-        InvLat=InvLat[validpoints]
-        density=density[validpoints]
-
-        maxima=np.where(local_maxima(Lstar))[0]
-        minima=np.where(local_maxima(-Lstar))[0]
-
-        segmentbounds=np.insert(maxima,np.searchsorted(maxima,minima),minima)
-        segmentbounds[-1]-=1
-
-        otimes=date2num(times)
-
-        window_len=41
-        smoothdens=smooth(density,window_len)[window_len/2:-window_len/2+1]
-        cdiff=(smoothdens[2:]-smoothdens[0:-2])/(Lstar[2:]-Lstar[:-2])
+        self.segmentbounds=segmentbounds
 
         fitcoeffs=np.zeros((len(segmentbounds)-1,6))
 
