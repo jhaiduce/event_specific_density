@@ -192,7 +192,9 @@ def fitdensity(L,MLT,MLAT,InvLat,pL,pW,ps,ts):
     pDens=sheeley_density_plasmasphere(L)
     tDens=sheeley_density_trough(L,MLT)
 
-    w=smoothstep(pL-pW/2,pL+pW/2,L)
+    pp=pW*(1+0.2571*np.sin(2*np.pi*(MLT-6)/24))
+
+    w=smoothstep(pL-pp/2,pL+pp/2,L)
 
     return (tDens*ts*w + pDens*ps*(1-w))*ozhogin_density_latitude_factor(MLAT,InvLat)
 
