@@ -550,9 +550,9 @@ class emfisis_fit_model(emfisis_density_model):
 
         if len(datetimes)==0:
             if returnFull:
-                return [],[],[]
+                return np.array([]),np.array([]),np.array([])
             else:
-                return []
+                return np.array([])
 
         fitcoeffs,fituncert,inds=self.get_fitcoeffs(datetimes,returnFull=True)
 
