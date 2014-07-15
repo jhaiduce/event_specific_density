@@ -541,7 +541,7 @@ class emfisis_fit_model(emfisis_density_model):
 
         Returns:
         
-            Densities at the requested points, or a tuple of (densities, uncertainties).
+            Densities at the requested points, or a tuple of (densities, uncertainties, indices).
         """
         try:
             _ = (d for d in datetimes)
