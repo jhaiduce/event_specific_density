@@ -39,7 +39,7 @@ def sheeley_density_plasmasphere(L):
     """
     return 1390*(3.0/L)**4.83
 
-def sheeley_density_trough(L,LT):
+def sheeley_density_trough(L,LT,MLTDependence=True):
     """
     Sheeley trough density model
 
@@ -51,7 +51,13 @@ def sheeley_density_trough(L,LT):
     Returns:
         density (float)
     """
-    return 124*(3.0/L)**4.0+36*(3.0/L)**3.5*np.cos((LT-7.7*(3.0/L)**2.0+12)*np.pi/12)
+
+    if MLTDependence:
+        MLTFactor=np.cos((LT-7.7*(3.0/L)**2.0+12)*np.pi/12)
+    else:
+        MLTFactor=1
+
+    return 124*(3.0/L)**4.0+36*(3.0/L)**3.5*MLTFactor
 
 def sheeley_uncertainty_plasmasphere(L):
     """
@@ -169,7 +175,7 @@ def smootherstep(edge0,edge1,x):
     x=np.clip((x-edge0)/(edge1-edge0),0,1)
     return x*x*x*(x*(x*6-15)+10)
 
-def fitdensity(L,MLT,MLAT,InvLat,pL,pW,ps,ts):
+def fitdensity(L,MLT,MLAT,InvLat,pL,pW,ps,ts,MLTDependence=True,latitudeDependence=True):
     """
     A plasmapause fit function based on the Sheeley model for the trough and plasmasphere, combined with the Ozhogin model for latitude dependence.
 
@@ -191,15 +197,23 @@ def fitdensity(L,MLT,MLAT,InvLat,pL,pW,ps,ts):
     """
 
     pDens=sheeley_density_plasmasphere(L)
-    tDens=sheeley_density_trough(L,MLT)
+    tDens=sheeley_density_trough(L,MLT,MLTDependence=MLTDependence)
 
-    pp=pW*(1+0.2571*np.sin(2*np.pi*(MLT-6)/24))
+    if latitudeDependence:
+        pp=pW*(1+0.2571*np.sin(2*np.pi*(MLT-6)/24))
+    else:
+        pp=pW
 
     w=smoothstep(pL-pp/2,pL+pp/2,L)
 
-    return (tDens*ts*w + pDens*ps*(1-w))*ozhogin_density_latitude_factor(MLAT,InvLat)
+    if latitudeDependence:
+        latitude_factor=ozhogin_density_latitude_factor(MLAT,InvLat)
+    else:
+        latitude_factor=1
 
-def fituncert(L,MLT,MLAT,InvLat,pL,pW,ps,ts,sign):
+    return (tDens*ts*w + pDens*ps*(1-w))*latitude_factor
+
+def fituncert(L,MLT,MLAT,InvLat,pL,pW,ps,ts,sign,MLTDependence=True,latitudeDependence=True):
     """
     Uncertainty model corresponding to the function fitdensity.
 
@@ -226,20 +240,25 @@ def fituncert(L,MLT,MLAT,InvLat,pL,pW,ps,ts,sign):
 
     # Sheeley uncertainty
     pUncert=sheeley_uncertainty_plasmasphere(L)
-    tUncert=sheeley_uncertainty_trough(L,MLT)
+    tUncert=sheeley_uncertainty_trough(L,MLT,MLTDependence)
 
     # Sheeley density
     pDens=sheeley_density_plasmasphere(L)
-    tDens=sheeley_density_trough(L,MLT)
+    tDens=sheeley_density_trough(L,MLT,MLTDependence)
 
     # Plasmapause transition factor
     w=smoothstep(pL-pW/2,pL+pW/2,L)
 
     # Total uncertainty
-    return ((tUncert*ts*w + pUncert*ps*(1-w))/(tDens*ts*w + pDens*ps*(1-w))+ozhogin_latitude_factor_uncertainty(MLAT,InvLat,sign)/ozhogin_density_latitude_factor(MLAT,InvLat))*(tDens*ts*w + pDens*ps*(1-w))*ozhogin_density_latitude_factor(MLAT,InvLat)
+    if latitudeDependence:
+        uncertainty=((tUncert*ts*w + pUncert*ps*(1-w))/(tDens*ts*w + pDens*ps*(1-w))+ozhogin_latitude_factor_uncertainty(MLAT,InvLat,sign)/ozhogin_density_latitude_factor(MLAT,InvLat))*(tDens*ts*w + pDens*ps*(1-w))*ozhogin_density_latitude_factor(MLAT,InvLat)
+    else:
+        uncertainty=((tUncert*ts*w + pUncert*ps*(1-w))/(tDens*ts*w + pDens*ps*(1-w)))*(tDens*ts*w + pDens*ps*(1-w))
+
+    return uncertainty
     
 
-def fitfunc(x,L,MLT,MLAT,InvLat,meas_dens):
+def fitfunc(x,L,MLT,MLAT,InvLat,meas_dens,MLTDependence=True,latitudeDependence=True):
     """
     A fit function used to find a best fit of fitdensity() to the passed meas_dens.
 
@@ -258,7 +277,7 @@ def fitfunc(x,L,MLT,MLAT,InvLat,meas_dens):
         
     """
     pL,pW,ps,ts=x
-    return np.log(fitdensity(L,MLT,MLAT,InvLat,pL,pW,ps,ts))-np.log(meas_dens)
+    return np.log(fitdensity(L,MLT,MLAT,InvLat,pL,pW,ps,ts,MLTDependence=MLTDependence,latitudeDependence=latitudeDependence))-np.log(meas_dens)
 
 def get_density_and_time(scname,dstart,dend):
     """
@@ -477,7 +496,7 @@ class emfisis_fit_model(emfisis_density_model):
         fitdensity, fituncert, inds = emfisis_fit(times, L, MLT, MLAT, InvLat, returnFull=True)
     """
 
-    def __init__(self,scname):
+    def __init__(self,scname,latitudeDependence=True,MLTDependence=True):
         """
         Set-up the density model
 
@@ -488,6 +507,8 @@ class emfisis_fit_model(emfisis_density_model):
         self.scname=scname
         self.binwidths=0.5
         self.uncertbins=np.arange(1.5,6.5,self.binwidths)
+        self.latitudeDependence=latitudeDependence
+        self.MLTDependence=MLTDependence
 
     def _calculate_fitcoeffs(self,dates):
 
@@ -508,13 +529,13 @@ class emfisis_fit_model(emfisis_density_model):
             InvLatseg=InvLat[segmentbounds[i]:segmentbounds[i+1]]
             tseg=times[segmentbounds[i]:segmentbounds[i+1]]
 
-            fitresult = leastsq(fitfunc,[3.6,0.8,1,1],args=(Lseg,MLTseg,MLATseg,InvLatseg,dseg),
+            fitresult = leastsq(fitfunc,[3.6,0.8,1,1],args=(Lseg,MLTseg,MLATseg,InvLatseg,dseg,self.MLTDependence,self.latitudeDependence),
                                 maxfev=10000,full_output=True,ftol=1e-4,xtol=1e-4)
             pL,pW,ps,ts=fitresult[0]
             fitcoeffs[i,:]=(date2num(tseg[0]),date2num(tseg[-1]),pL,pW,ps,ts)
             fituncert[i,0:2]=date2num(tseg[0]),date2num(tseg[-1])
 
-            fitvalues=fitdensity(Lseg,MLTseg,MLATseg,InvLatseg,pL,pW,ps,ts)
+            fitvalues=fitdensity(Lseg,MLTseg,MLATseg,InvLatseg,pL,pW,ps,ts,self.MLTDependence,self.latitudeDependence)
             for j in range(len(self.uncertbins)-1):
                 binInds=np.where((self.uncertbins[j]<Lseg) * (Lseg<self.uncertbins[j+1]))
                 fituncert[i,j+2]=np.exp(np.sqrt(((np.log(fitvalues[binInds])-np.log(dseg[binInds]))**2).sum()/len(binInds[0])))
@@ -565,7 +586,7 @@ class emfisis_fit_model(emfisis_density_model):
         except:
             pass
 
-        fitvalues=np.maximum(fitdensity(L,MLT,MLAT,InvLat,pL,pW,ps,ts),minDensity)
+        fitvalues=np.maximum(fitdensity(L,MLT,MLAT,InvLat,pL,pW,ps,ts,self.MLTDependence,self.latitudeDependence),minDensity)
 
         if returnFull:
             uncertinds=np.searchsorted(self.uncertbins,L.flatten())
