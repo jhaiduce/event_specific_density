@@ -123,7 +123,10 @@ def ozhogin_density_latitude_factor(lat,lat_inv):
     Returns:
         float
     """
-    return np.cos(np.pi/2*1.01*lat/lat_inv)**-0.75
+    try:
+        return np.cos(np.pi/2*1.01*lat/lat_inv)**-0.75
+    except ZeroDivisionError:
+        return np.nan
 
 def ozhogin_latitude_factor_uncertainty(lat,lat_inv,sign):
     """
@@ -199,7 +202,7 @@ def fitdensity(L,MLT,MLAT,InvLat,pL,pW,ps,ts,MLTDependence=True,latitudeDependen
     pDens=sheeley_density_plasmasphere(L)
     tDens=sheeley_density_trough(L,MLT,MLTDependence=MLTDependence)
 
-    if latitudeDependence:
+    if MLTDependence:
         pp=pW*(1+0.2571*np.sin(2*np.pi*(MLT-6)/24))
     else:
         pp=pW
@@ -359,7 +362,7 @@ class emfisis_smoothing_model(emfisis_density_model):
         fitdensity, fituncert, inds = emfisis_fit(times, L, MLT, MLAT, InvLat, returnFull=True)
     """
 
-    def __init__(self,scname,**kwargs):
+    def __init__(self,scname,latitudeDependence=True,MLTDependence=True,**kwargs):
         """
         Set-up the density model
 
@@ -371,6 +374,8 @@ class emfisis_smoothing_model(emfisis_density_model):
         self.uncertbins=np.arange(1.5,6.5,self.binwidths)
         self.kwargs=kwargs
         self.segmentbounds=None
+        self.latitudeDependence=latitudeDependence
+        self.MLTDependence=MLTDependence
 
     def _create_interpolators(self,dates):
         """
@@ -380,6 +385,9 @@ class emfisis_smoothing_model(emfisis_density_model):
         times,Lstar,MLT,MLAT,InvLat,density,segmentbounds=self._getdata(self.scname,dates)
 
         interpolators=np.zeros((len(segmentbounds)-1,),dtype=object)
+        MLT_interpolators=np.zeros((len(segmentbounds)-1,),dtype=object)
+        MLAT_interpolators=np.zeros((len(segmentbounds)-1,),dtype=object)
+        InvLat_interpolators=np.zeros((len(segmentbounds)-1,),dtype=object)
         segmentlimits=np.zeros((len(segmentbounds)-1,2))
 
         for i in range(len(segmentbounds)-1):
@@ -392,15 +400,16 @@ class emfisis_smoothing_model(emfisis_density_model):
 
             inds=np.argsort(Lseg)
 
-#            if self.epsilon==0:
-#                interpolators[i]=interp1d(Lseg[inds],dseg[inds],bounds_error=False)
-#            else:
-                #interpolators[i]=Rbf(Lseg,dseg,**self.kwargs)
             interpolators[i]=UnivariateSpline(Lseg[inds],dseg[inds],**self.kwargs)
+            if self.MLTDependence:
+                MLT_interpolators[i]=UnivariateSpline(Lseg[inds],MLTseg[inds],**self.kwargs)
+            if self.latitudeDependence:
+                MLAT_interpolators[i]=UnivariateSpline(Lseg[inds],MLATseg[inds],**self.kwargs)
+                InvLat_interpolators[i]=UnivariateSpline(Lseg[inds],InvLatseg[inds],**self.kwargs)
                 
             segmentlimits[i,:]=date2num(tseg[0]),date2num(tseg[-1])
 
-        return segmentlimits,interpolators
+        return segmentlimits,interpolators,MLT_interpolators,MLAT_interpolators,InvLat_interpolators
 
     def __call__(self,datetimes,L,MLT,MLAT,InvLat,minDensity=1e-1,returnFull=False):
         """
@@ -447,16 +456,25 @@ class emfisis_smoothing_model(emfisis_density_model):
         odates=odates.flatten()
 
         if self.segmentbounds is None:
-            self.segmentbounds,self.interpolators=self._create_interpolators(odates)
+            (self.segmentbounds,self.interpolators,self.MLT_interpolators,
+             self.MLAT_interpolators,self.InvLat_interpolators)=self._create_interpolators(odates)
 
         if odates.max()>self.segmentbounds.max():
-            segmentbounds,interpolators=self._create_interpolators([self.segmentbounds.max(),odates.max()])
+            (segmentbounds,interpolators,MLT_interpolators,MLAT_interpolators,InvLat_interpolators)\
+                = self._create_interpolators([self.segmentbounds.max(),odates.max()])
             self.segmentbounds=np.concatenate((self.segmentbounds,segmentbounds))
             self.interpolators=np.concatenate((self.interpolators,interpolators))
+            self.MLT_interpolators=np.concatenate((self.MLT_interpolators,MLT_interpolators))
+            self.MLAT_interpolators=np.concatenate((self.MLAT_interpolators,MLAT_interpolators))
+            self.InvLat_interpolators=np.concatenate((self.InvLat_interpolators,InvLat_interpolators))
         if odates.min()<self.segmentbounds.min():
-            segmentbounds,interpolators=self._create_interpolators([odates.min(),self.segmentbounds.min()])
+            (segmentbounds,interpolators,MLT_interpolators,MLAT_interpolators,InvLat_interpolators)\
+                =self._create_interpolators([odates.min(),self.segmentbounds.min()])
             self.segmentbounds=np.concatenate((segmentbounds,self.segmentbounds))
             self.interpolators=np.concatenate((interpolators,self.interpolators))
+            self.MLT_interpolators=np.concatenate((MLT_interpolators,self.MLT_interpolators))
+            self.MLAT_interpolators=np.concatenate((MLAT_interpolators,self.MLAT_interpolators))
+            self.InvLat_interpolators=np.concatenate((InvLat_interpolators,self.InvLat_interpolators))
 
         # Find dates in array
         i=np.searchsorted(self.segmentbounds[:,0],odates)
@@ -466,12 +484,40 @@ class emfisis_smoothing_model(emfisis_density_model):
         densities.fill(np.ma.masked)
         segmentbounds=self.segmentbounds
         in_limits=(i>0)*(i<self.segmentbounds.shape[0])
+
         if len(odates)==len(L):
             if len(i[in_limits])>0:
                 densities[in_limits] = [self.interpolators[k](L[j]) for j,k in enumerate(i[in_limits]-1) ]
+                if self.latitudeDependence:
+
+                    MLAT_sourcepoints=np.array([self.MLAT_interpolators[k](L[j]) for j,k in enumerate(i[in_limits]-1) ]).flatten()
+                    InvLat_sourcepoints=np.array([self.InvLat_interpolators[k](L[j]) for j,k in enumerate(i[in_limits]-1) ]).flatten()
+
+                    # Limit MLAT and InvLat to points in this pass:
+                    try:
+                        MLAT_in_limits=MLAT[i[in_limits]].flatten()
+                    except TypeError:
+                        MLAT_in_limits=MLAT
+                    try:
+                        InvLat_in_limits=InvLat[i[in_limits]].flatten()
+                    except TypeError:
+                        InvLat_in_limits=InvLat
+
+                    latfac=ozhogin_density_latitude_factor(MLAT_in_limits,InvLat_in_limits)
+
+                    latfac_sourcepoints=ozhogin_density_latitude_factor(MLAT_sourcepoints,InvLat_sourcepoints)
+
+                    densities[in_limits]=densities[in_limits]*latfac/latfac_sourcepoints
         elif len(odates)==1:
             if len(i[in_limits])>0:
                 densities = self.interpolators[i[in_limits]-1][0](L)
+                if self.latitudeDependence:
+                    MLAT_sourcepoints=np.array([self.MLAT_interpolators[k](L[j]) for j,k in enumerate(i[in_limits]-1) ])
+                    InvLat_sourcepoints=np.array([self.InvLat_interpolators[k](L[j]) for j,k in enumerate(i[in_limits]-1) ])
+
+                    latfac=ozhogin_density_latitude_factor(MLAT,InvLat)
+                    latfac_sourcepoints=ozhogin_density_latitude_factor(MLAT_sourcepoints,InvLat_sourcepoints)
+                    densities=densities*latfac/latfac_sourcepoints
         else:
             raise ValueError('Size mismatch between datetimes array and L.')
 
