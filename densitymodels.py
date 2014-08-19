@@ -1,3 +1,37 @@
+"""
+The densitymodels module contains implementations of several empirical plasma density models, including the emfisis_fit_model.
+
+.. rubric:: Classes
+
+    emfisis_fit_model
+
+.. rubric:: Functions
+
+.. autosummary::
+    :toctree: autosummary
+    
+    carpenter_density_plasmasphere
+    sheeley_density_plasmasphere
+    sheeley_density_trough
+    sheeley_uncertainty_plasmasphere
+    sheeley_uncertainty_trough
+    ozhogin_uncertainty_equator
+    ozhogin_density_latitude_factor
+    ozhogin_latitude_factor_uncertainty
+    smoothstep
+    smootherstep
+    get_density_and_time
+
+.. rubric:: Classes
+
+.. autosummary::
+    :toctree: autosummary
+    
+    emfisis_fit_model
+    emfisis_smoothing_model
+
+"""
+
 import emfisis
 import ephemeris
 from matplotlib import pyplot as plt
@@ -16,7 +50,7 @@ def carpenter_density_plasmasphere(x,R,L):
     Carpenter plasmasphere density model
     
     Args:
-        x (float): Given by $x = 2\pi(d+9)/365$, where d is the day number.
+        x (float): Given by :math:`x = 2\pi(d+9)/365`, where d is the day number.
 
         R (float): 13-month average sunspot number
 
@@ -315,9 +349,17 @@ def get_density_and_time(scname,dstart,dend):
     return times,Lsint(otimes),MLTint(otimes),MLATint(otimes),InvLatint(otimes),density
 
 def local_maxima(a):
+    """
+    Return array of booleans indicating whether each point in the array 'a' is a local maximum
+    """
+
     return np.r_[True, a[1:] < a[:-1]] & np.r_[a[:-1] < a[1:], True]
 
 class emfisis_density_model(object):
+
+    """
+    A base class for density models constructed using data from the EMFISIS instrument
+    """
 
     def _getdata(self,scname,dates):
 
@@ -355,12 +397,12 @@ class emfisis_density_model(object):
 class emfisis_smoothing_model(emfisis_density_model):
 
     """
-    Time-dependent electron density model based on RBSP density measurements. Smooths the densities measured by the EMFISIS instrument and extrapolates them into all local times and latitudes.
+    Time-dependent electron density model based on RBSP density measurements. Smooths the densities measured by the EMFISIS instrument and extrapolates them into all local times and latitudes. The actual smoothing is performed using scipy.interpolate.UnivariateSpline, which performs a cubic spline interpolation. Keyword arguments of the UnivariateSpline constructor may be passed to the constructor of this class. Particularly useful is the parameter s, which controls the amount of smoothing. s=0 will result in no smoothing (the spline will pass through all the data points), while larger values of s will result in greater degrees of smoothing.
 
     Example::
 
         times, L, MLT, MLAT, InvLat, density = get_density_and_time('rbspa', datetime(2012,10,6), datetime(2012,10,10))
-        emfisis_fit = emfisis_fit_model('rbspa')
+        emfisis_fit = emfisis_smoothing_model('rbspa')
         fitdensity, fituncert, inds = emfisis_fit(times, L, MLT, MLAT, InvLat, returnFull=True)
     """
 
@@ -369,7 +411,16 @@ class emfisis_smoothing_model(emfisis_density_model):
         Set-up the density model
 
         Args:
+
             scname (str): RBSP spacecraft to use ('rbspa' or 'rbspb')
+
+        Kwargs:
+
+            latitudeDependence (bool): Ignored (included for consistency with emfisis_fit_model)
+
+            MLTDependence (bool): Ignored (included for consistency with emfisis_fit_model)
+
+            Any additional keyward arguments are passed to the UnivariateSpline constructor.
         """
         self.scname=scname
         self.binwidths=0.5
@@ -381,7 +432,7 @@ class emfisis_smoothing_model(emfisis_density_model):
 
     def _create_interpolators(self,dates):
         """
-        Load the data from the RBSP spacecraft
+        Load the data from the RBSP spacecraft and create interpolator objects from it.
         """
 
         times,Lstar,MLT,MLAT,InvLat,density,segmentbounds=self._getdata(self.scname,dates)
@@ -535,7 +586,7 @@ class emfisis_smoothing_model(emfisis_density_model):
 class emfisis_fit_model(emfisis_density_model):
 
     """
-    Time-dependent electron density model based on RBSP density measurements. Fits a modified Sheeley density model (see the fitdensity function) to the nearest (in time) density data from the given RBSP spacecraft.
+    Time-dependent electron density model based on RBSP density measurements. Fits a modified Sheeley density model (see the fitdensity function) to the nearest (in time) density data from the given RBSP spacecraft, and from that constructs a prediction of plasma densities elsewhere in the inner magnetosphere.
 
     Example::
 

@@ -1,3 +1,16 @@
+"""
+The densitymodels module contains implementations of several empirical plasma density models, including the emfisis_fit_model.
+
+.. rubric:: Classes
+
+.. autosummary::
+    :toctree: autosummary
+
+    DiscontinuousInterpolator
+    ephemeris
+
+"""
+
 import numpy as np
 import h5py
 import os
@@ -35,9 +48,22 @@ class DiscontinuousInterpolator(object):
 
 class ephemeris(object):
 
+    """
+    Class for fetching ephemeris data from a specific satellite within a given date range. Caches any data fetched for faster retrieval later.
+    """
+
     EPHDIR='/n/space_data/RBSP/'
 
     def __init__(self,scname,dstart,dend):
+        """
+        Args:
+            
+            scname (str): Spacecraft name
+
+            dstart (datetime): Start date
+
+            dend (datetime): End date
+        """
         self.scname=scname
         self.dstart=dstart
         self.dend=dend
@@ -89,7 +115,10 @@ class ephemeris(object):
 
     def get_times(self):
         """
-        Get the times associated with the dates in the file
+        Get the times (in UTC) associated with all the dates for which ephemeris data has been read, as floating point numbers representing universal time in days.
+
+        Returns:
+            Array of floats
         """
         # If we have already calculated the available times, just return the array
         if self.times is not None:

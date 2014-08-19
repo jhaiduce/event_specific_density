@@ -1,3 +1,16 @@
+"""
+The emfisis module contains tools for reading density data obtained using the EMFISIS instrument.
+
+.. rubric:: Functions
+
+.. autosummary::
+    :toctree: autosummary
+    
+    get_filename
+    get_data
+
+"""
+
 from spacepy import pycdf
 import spacepy
 import numpy as np
