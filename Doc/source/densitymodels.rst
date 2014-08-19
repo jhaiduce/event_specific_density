@@ -1,3 +1,7 @@
+####################
+Densitymodels module
+####################
+
 .. toctree::
    :maxdepth: 2
 
