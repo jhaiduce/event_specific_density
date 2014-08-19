@@ -564,7 +564,7 @@ class emfisis_fit_model(emfisis_density_model):
 
         self.segmentbounds=segmentbounds
 
-        fitcoeffs=np.zeros((len(segmentbounds)-1,6))
+        fitcoeffs=np.zeros((len(segmentbounds)-1,8))
 
         fituncert=np.zeros((len(segmentbounds)-1,len(self.uncertbins)+2))
         fituncert.fill(None)
