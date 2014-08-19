@@ -42,8 +42,11 @@ def get_data(scname,varnames,dstart,dend):
             filename=get_filename(scname,date)
             cdffile=dm.fromCDF(filename)
         except spacepy.pycdf.CDFError:
-            filename=get_filename(scname,date,version='1.3.8')
-            cdffile=dm.fromCDF(filename)
+            try:
+                filename=get_filename(scname,date,version='1.3.8')
+                cdffile=dm.fromCDF(filename)
+            except:
+                continue
             
         for i,varname in enumerate(varnames):
             cdfvar=cdffile[varname]
