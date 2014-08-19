@@ -307,7 +307,7 @@ def get_density_and_time(scname,dstart,dend):
     times,density=emfisis.get_data(scname,['Epoch','density'],dstart,dend)
     #density=emfisis.get_data(scname,'density',dstart,dend)
     ephem=ephemeris.ephemeris(scname,dstart,dend+timedelta(1))
-    Lsint=ephem.get_interpolator('Lstar')
+    Lsint=ephem.get_interpolator('Lsimple')
     MLTint=ephem.get_interpolator('EDMAG_MLT')
     MLATint=ephem.get_interpolator('EDMAG_MLAT')
     InvLatint=ephem.get_interpolator('InvLat')
